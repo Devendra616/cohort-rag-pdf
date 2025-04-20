@@ -22,7 +22,7 @@ const loader = new PDFLoader(
 );
 
 const docs = await loader.load();
-// console.log(docs);
+// console.log(docs[0]?.metadata?.pdf);
 
 // ✂️ split the document
 const splitter = new RecursiveCharacterTextSplitter({
@@ -30,6 +30,7 @@ const splitter = new RecursiveCharacterTextSplitter({
   chunkOverlap: 150,
 });
 const chunks = await splitter.splitDocuments(docs);
+// console.log("🚀 ~ chunks:", chunks[1]);
 console.log(`Split the document into ${chunks.length} sub-documents.`);
 
 // 🔑 create embeddings
@@ -39,10 +40,14 @@ const embeddings = new OpenAIEmbeddings({
   batchSize: 512, //max 2048
   dimensions: 1024,
 });
+/* const embeddedDocs = await embeddings.embedDocuments(
+  chunks.map((c) => c.pageContent)
+);
+console.log("🚀 ~ embeddedDocs:", embeddedDocs); */
 
+// initialize Pinecone
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pinecone.index(process.env.PINECONE_INDEX);
-// console.log("🚀 ~ index:", index);
 
 // instantiate VectorStore
 const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
@@ -50,24 +55,19 @@ const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
   // Maximum number of batch requests to allow at once. Each batch is 1000 vectors.
   maxConcurrency: 5,
 });
-const pineconeStore = await vectorStore.addDocuments(chunks);
+/* const pineconeStore = await vectorStore.addDocuments(chunks);
 console.log("🚀 ~ pineconeStore:", pineconeStore);
-
-/* const similaritySearchResults = await vectorStore.similaritySearch(
-  "emotional reactions",
-  2
-);
-console.log("similaritySearchResults", similaritySearchResults);
-for (const doc of similaritySearchResults) {
-  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
-} */
-
+ */
 // optional filter
 const filter = {}; //match to metadata
 const retriever = vectorStore.asRetriever({
   filter,
-  k: 10, // no.of results
+  k: 2, // no.of results
 });
+
+const query = "What is the age limit for account opening?";
+const relevantDocs = await retriever.invoke(query);
+console.log("🚀 ~ relevantDocs:", relevantDocs);
 
 // Retrireval chain
 const customPromptTemplate = `Answer the quetions based only on the context provided.
@@ -76,7 +76,7 @@ Use three sentences maximum and keep the answer as concise as possible.
 {context}
 Question: {question}
 `;
-const model = new ChatOpenAI({ temperature: 0.2 });
+const model = new ChatOpenAI({ temperature: 0.2, model: "gpt-4o-mini" });
 const prompt = PromptTemplate.fromTemplate(customPromptTemplate);
 const chain = RunnableSequence.from([
   {
